@@ -3,6 +3,7 @@ using Printf
 using CSV
 using DataFrames
 using SpecialFunctions
+using Random
 
 """
     write_gph(dag::DiGraph, idx2names, filename)
@@ -26,7 +27,7 @@ Inspiration taken from Ed post #368.
 """
 function load_gph(graphfile, datafile)
     vars = split(readline(datafile), ',')
-    names_to_idx = Dict( vars[i] => i for i in 1:length(vars) )
+    names_to_idx = Dict(vars[i] => i for i in eachindex(vars))
     g = SimpleDiGraph(length(vars))
     open(graphfile, "r") do f
         while ! eof(f)
@@ -47,14 +48,17 @@ for each value of each variable for each parental instantiation.
 Inspiration taken from Algorithm 4.1 in the textbook.
 """
 function load_counts(datafile, names_to_idx, g)
+    data = Matrix(CSV.read(datafile, DataFrame))
+    return get_counts_from_data(data, names_to_idx, g)
+end
+
+function get_counts_from_data(data, names_to_idx, g)
     n = length(names_to_idx) # number of variables
-    df = CSV.read(datafile, DataFrame)
-    r = [maximum(col) for col in eachcol(df)] # num values from max in dataset
-    q = [prod([r[j] for j in inneighbors(g,i)]) for i in 1:n] # num parental instantiations
-    
-    M = [zeros(q[i], r[i]) for i in 1:n] # for each variable, init parent x val 
-    for df_sample in eachrow(df) # for each sample
-        sample = Vector(df_sample)
+    r = [maximum(col) for col in eachcol(data)] # num values from max in dataset
+    q = [prod([r[j] for j in inneighbors(g,i)]) for i in 1:n] # num parental instantiations    
+    M = [zeros(q[i], r[i]) for i in 1:n] # for each variable, init parent x val
+
+    for sample in eachrow(data) # for each sample
         for i in 1:n # for each variable
             k = sample[i] # variable value is the same as the value's index k
             parents = inneighbors(g,i)
@@ -98,6 +102,11 @@ function calculate_bayesian_score(M, priors)
     return score
 end
 
+"""
+Takes in a file containing an edgelist defining a graph and a file containing
+sample data and calculates the bayesian score (probability of the data given
+the graph structure).
+"""
 function compute(graphfile, datafile)
     g, names_to_idx = load_gph(graphfile, datafile)
     counts = load_counts(datafile, names_to_idx, g)
@@ -105,8 +114,22 @@ function compute(graphfile, datafile)
     return calculate_bayesian_score(counts, priors)
 end
 
+function find_best_graph(datafile, searchmethod)
+    # init data and mapping of variable to index from datafile
+    data_df = CSV.read(datafile, DataFrame)
+    data = Matrix(data_df)
+    vars = names(data_df)
+    names_to_idx = Dict(vars[i] => i for i in eachindex(vars))
+    
+    if searchmethod == "k2"
+        var_order = shuffle(eachindex(vars)) # random topological ordering
+        return run_k2_search(var_order, names_to_idx, data)
+    end
+end
+
+
 # fn = ARGS[1]
-fn = "score"
+fn = "learn"
 
 if fn == "score"
     # graphfile = ARGS[2]
@@ -114,11 +137,20 @@ if fn == "score"
     # outputfile = ARGS[4]
     graphfile = "example\\example.gph"
     datafile = "example\\example.csv"
-    outputfile = "test.txt"
+    outputfile = "test2.txt"
     
     score = compute(graphfile, datafile)
-    println(score)
-    # open(outputfile, "w") do f
-    #     write(f, string(score))
-    # end
+    open(outputfile, "w") do f
+        write(f, string(score))
+    end
+elseif fn == "learn"
+    # datafile = ARGS[2]
+    # outputfile = ARGS[3]
+    # searchmethod = ARGS[4]
+    datafile = "example\\example.csv"
+    outputfile = "test.txt"
+    searchmethod = "k2"
+
+    g, score = find_best_graph(datafile, searchmethod)
+
 end
