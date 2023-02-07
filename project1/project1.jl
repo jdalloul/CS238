@@ -1,9 +1,11 @@
 using Graphs
 using Printf
-using CSV
-using DataFrames
-using SpecialFunctions
-using Random
+using CSV # reading in data
+using DataFrames # reading in data
+using SpecialFunctions # for loggamma
+using Random # shuffling variables
+using GraphRecipes
+using Plots
 
 """
     write_gph(dag::DiGraph, idx2names, filename)
@@ -37,31 +39,25 @@ function load_gph(graphfile, datafile)
         end
     end
 
-    return g, names_to_idx
+    return g
 end
 
 """
-Takes in the path to a datafile (csv format), a dictionary mapping variable
-names to vertex indices, and a graph and obtains the counts found in the dataset
-for each value of each variable for each parental instantiation.
+Takes in a graph (SimpleDiGraph) and data matrix and returns an array containing
+the (parental instantiations) x (number of variable values) counts.
 
-Inspiration taken from Algorithm 4.1 in the textbook.
+Inspiration taken from Algorithm 4.1 in the course textbook.
 """
-function load_counts(datafile, names_to_idx, g)
-    data = Matrix(CSV.read(datafile, DataFrame))
-    return get_counts_from_data(data, names_to_idx, g)
-end
-
-function get_counts_from_data(data, names_to_idx, g)
-    n = length(names_to_idx) # number of variables
+function get_counts_from_data(g, data)
+    n = size(data, 2) # number of variables = number of cols
     r = [maximum(col) for col in eachcol(data)] # num values from max in dataset
-    q = [prod([r[j] for j in inneighbors(g,i)]) for i in 1:n] # num parental instantiations    
+    q = [prod([r[j] for j in inneighbors(g, i)]) for i in 1:n] # num parental instantiations    
     M = [zeros(q[i], r[i]) for i in 1:n] # for each variable, init parent x val
 
     for sample in eachrow(data) # for each sample
         for i in 1:n # for each variable
             k = sample[i] # variable value is the same as the value's index k
-            parents = inneighbors(g,i)
+            parents = inneighbors(g, i)
             j = 1
             if !isempty(parents)
                 # convert parent values (cartesian indices) to linear index
@@ -78,8 +74,7 @@ end
 """
 Takes in counts from a dataset (array of n variables, each containing an array
 of j parental instantiations by k variable values) and Dirichlet prior counts
-(same shape as the dataset counts) and calculates the bayesian score. The score
-is returned.
+(same shape as the dataset counts) and calculates/returns the bayesian score.
 """
 function calculate_bayesian_score(M, priors)
     # for each combination of i, j, k
@@ -103,54 +98,116 @@ function calculate_bayesian_score(M, priors)
 end
 
 """
-Takes in a file containing an edgelist defining a graph and a file containing
-sample data and calculates the bayesian score (probability of the data given
-the graph structure).
+Takes in a graph (SimpleDiGraph) and a data matrixand calculates/returns the
+bayesian score (probability of the data given the graph structure).
 """
-function compute(graphfile, datafile)
-    g, names_to_idx = load_gph(graphfile, datafile)
-    counts = load_counts(datafile, names_to_idx, g)
+function compute(g, data)
+    counts = get_counts_from_data(g, data)
     priors = [ones(size(var_counts)) for var_counts in counts] # uniform prior
     return calculate_bayesian_score(counts, priors)
 end
 
+"""
+Takes in an topological ordering of variables and a data matrix and runs the k2
+local search algorithm, greedily adding parents to each node that increase the
+graph's bayesian score.
+"""
+function run_k2_search(var_order, data)
+    g = SimpleDiGraph(size(data, 2))
+    for (k, i) in enumerate(var_order[2:end]) # for each variable
+        y = compute(g, data)
+        while true
+            y_best, j_best = -Inf, 0
+            for j in var_order[1:k] # loop through candidate parents
+                if !has_edge(g, j, i)
+                    add_edge!(g, j, i)
+                    curr_y = compute(g, data)
+                    if curr_y > y_best
+                        y_best, j_best = curr_y, j # better to add j as parent
+                    end
+                    rem_edge!(g, j, i)
+                end
+            end
+            if y_best > y
+                y = y_best
+                add_edge!(g, j_best, i)
+            else
+                break
+            end
+        end
+    end
+    return g, compute(g, data) # return final graph and its bayesian score
+end
+
+"""
+Takes in a file containing data and the search method to use (e.g. "k2", which
+is the only one implemented for baseline) and runs the search method to find the
+optimal graph structure.
+"""
 function find_best_graph(datafile, searchmethod)
     # init data and mapping of variable to index from datafile
     data_df = CSV.read(datafile, DataFrame)
     data = Matrix(data_df)
     vars = names(data_df)
     names_to_idx = Dict(vars[i] => i for i in eachindex(vars))
-    
     if searchmethod == "k2"
         var_order = shuffle(eachindex(vars)) # random topological ordering
-        return run_k2_search(var_order, names_to_idx, data)
+        g, score = run_k2_search(var_order, data)
+        return g, score, names_to_idx
     end
 end
 
+# start of the program
 
-# fn = ARGS[1]
-fn = "learn"
+fn = "draw"
 
 if fn == "score"
-    # graphfile = ARGS[2]
-    # datafile = ARGS[3]
-    # outputfile = ARGS[4]
-    graphfile = "example\\example.gph"
-    datafile = "example\\example.csv"
+    # Calculate the bayesian score of a graph for a specified dataset
+    graphfile = "project1\\example\\example.gph"
+    datafile = "project1\\example\\example.csv"
     outputfile = "test2.txt"
-    
-    score = compute(graphfile, datafile)
+
+    g = load_gph(graphfile, datafile)
+    data = Matrix(CSV.read(datafile, DataFrame))
+
+    score = compute(g, data)
     open(outputfile, "w") do f
         write(f, string(score))
     end
 elseif fn == "learn"
-    # datafile = ARGS[2]
-    # outputfile = ARGS[3]
-    # searchmethod = ARGS[4]
-    datafile = "example\\example.csv"
-    outputfile = "test.txt"
+    # Determine the optimal graph structure for a specified dataset
+    datafile = "data\\large.csv"
+    outputfile = "large_output"
     searchmethod = "k2"
 
-    g, score = find_best_graph(datafile, searchmethod)
+    graph_outputfile = outputfile * ".gph"
+    score_outputfile = outputfile * ".txt"
 
+    println("Finding best graph ...")
+    g, score, names_to_idx = find_best_graph(datafile, searchmethod)
+
+    println("Found graph. Writing to files and plotting ...")
+    # write score and mapping of variable names -> indices to output
+    open(score_outputfile, "w") do f
+        write(f, string(score), '\n')
+        for key in keys(names_to_idx)
+            @printf(f, "%s => %s\n", key, names_to_idx[key])
+        end
+    end
+
+    # plot graph
+    idx_to_names = Dict(names_to_idx[var_name] => var_name for var_name in keys(names_to_idx))
+    node_names = [idx_to_names[i] for i in 1:length(idx_to_names)]
+    nodesize = [max(outdegree(g, v), 2) for v in vertices(g)]
+    display(graphplot(g, names = node_names, nodesize = 0.2, method = :stress))
+
+    # write graph edgelist to file
+    write_gph(g, idx_to_names, graph_outputfile)
+elseif fn == "draw"
+    # plot the graph defined by a specified edgelist and datafile
+    graphfile = "large_output.gph"
+    datafile = "data\\large.csv"
+
+    g = load_gph(graphfile, datafile)
+    display(graphplot(g, names = node_names, nodesize = 0.2, method = :stress))
 end

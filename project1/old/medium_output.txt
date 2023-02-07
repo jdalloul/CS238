@@ -1,0 +1,13 @@
+-42148.91540071153
+citricacid => 3
+fixedacidity => 1
+residualsugar => 4
+quality => 12
+freesulfurdioxide => 6
+alcohol => 11
+density => 8
+ph => 9
+chlorides => 5
+sulphates => 10
+volatileacidity => 2
+totalsulfurdioxide => 7

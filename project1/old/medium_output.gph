@@ -1,0 +1,17 @@
+volatileacidity,alcohol
+volatileacidity,quality
+citricacid,fixedacidity
+citricacid,sulphates
+chlorides,alcohol
+freesulfurdioxide,totalsulfurdioxide
+density,citricacid
+density,residualsugar
+density,totalsulfurdioxide
+density,ph
+density,sulphates
+density,alcohol
+ph,fixedacidity
+sulphates,ph
+sulphates,alcohol
+alcohol,totalsulfurdioxide
+alcohol,quality

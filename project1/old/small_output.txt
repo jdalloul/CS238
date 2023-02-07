@@ -1,0 +1,9 @@
+-3824.562082449276
+portembarked => 2
+survived => 8
+numsiblings => 7
+passengerclass => 5
+fare => 3
+numparentschildren => 4
+sex => 6
+age => 1
